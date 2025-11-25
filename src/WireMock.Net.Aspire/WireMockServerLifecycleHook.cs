@@ -40,7 +40,7 @@ internal class WireMockServerLifecycleHook(ILoggerFactory loggerFactory) : IDist
             }
         }, _linkedCts.Token);
 
-        return Task.CompletedTask;
+        return _mappingTask;
     }
 
     public async ValueTask DisposeAsync()
