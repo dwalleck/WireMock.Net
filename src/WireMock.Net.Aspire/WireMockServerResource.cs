@@ -91,6 +91,14 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
 
         if (!string.IsNullOrEmpty(Arguments.OpenApiFilePath))
         {
+            if (!File.Exists(Arguments.OpenApiFilePath))
+            {
+                throw new FileNotFoundException(
+                    $"OpenAPI specification file not found: {Arguments.OpenApiFilePath}. " +
+                    "Ensure the file path is correct and the file exists.",
+                    Arguments.OpenApiFilePath);
+            }
+
             _logger?.LogInformation("Loading OpenAPI spec from file: '{Path}'", Arguments.OpenApiFilePath);
             content = await File.ReadAllTextAsync(Arguments.OpenApiFilePath, cancellationToken);
         }

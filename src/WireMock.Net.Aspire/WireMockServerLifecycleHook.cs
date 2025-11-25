@@ -25,14 +25,22 @@ internal class WireMockServerLifecycleHook(ILoggerFactory loggerFactory) : IDist
 
             foreach (var wireMockServerResource in wireMockServerResources)
             {
-                wireMockServerResource.SetLogger(loggerFactory.CreateLogger<WireMockServerResource>());
+                var logger = loggerFactory.CreateLogger<WireMockServerResource>();
+                wireMockServerResource.SetLogger(logger);
 
                 var endpoint = wireMockServerResource.GetEndpoint();
                 System.Diagnostics.Debug.Assert(endpoint.IsAllocated);
 
                 await wireMockServerResource.WaitForHealthAsync(_linkedCts.Token);
 
-                await wireMockServerResource.LoadOpenApiDocumentAsync(_linkedCts.Token);
+                try
+                {
+                    await wireMockServerResource.LoadOpenApiDocumentAsync(_linkedCts.Token);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to load OpenAPI document for WireMock resource '{ResourceName}'. The WireMock server will start without OpenAPI mappings.", wireMockServerResource.Name);
+                }
 
                 await wireMockServerResource.CallApiMappingBuilderActionAsync(_linkedCts.Token);
 

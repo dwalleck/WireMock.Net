@@ -160,6 +160,14 @@ public static class WireMockServerBuilderExtensions
     /// <param name="username">The admin username.</param>
     /// <param name="password">The admin password.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// <para><strong>Security Note:</strong> Credentials are passed as command-line arguments to the WireMock container
+    /// and may be visible in container logs or process listings. For production scenarios, consider using
+    /// secure credential management solutions like Azure Key Vault, environment variables from secure stores,
+    /// or Aspire's secret management features.</para>
+    /// <para>The credentials are transmitted as HTTP Basic Authentication headers (Base64 encoded) when
+    /// making admin API calls. Ensure HTTPS is used in production environments to protect credentials in transit.</para>
+    /// </remarks>
     public static IResourceBuilder<WireMockServerResource> WithAdminUserNameAndPassword(this IResourceBuilder<WireMockServerResource> wiremock, string username, string password)
     {
         Guard.NotNull(wiremock);
@@ -398,6 +406,26 @@ public static class WireMockServerBuilderExtensions
     {
         Guard.NotNull(wiremock);
         Guard.NotNullOrWhiteSpace(filePath);
+
+        // Validate file path to prevent path traversal attacks
+        try
+        {
+            // Validate that the path is well-formed
+            _ = Path.GetFullPath(filePath);
+
+            // Check for common path traversal patterns
+            if (filePath.Contains("..", StringComparison.Ordinal) && !Path.IsPathRooted(filePath))
+            {
+                throw new ArgumentException(
+                    "File path contains potentially unsafe path traversal patterns (..). " +
+                    "Use absolute paths or ensure relative paths don't traverse outside the working directory.",
+                    nameof(filePath));
+            }
+        }
+        catch (Exception ex) when (ex is not ArgumentException)
+        {
+            throw new ArgumentException($"Invalid file path: {filePath}", nameof(filePath), ex);
+        }
 
         wiremock.Resource.Arguments.OpenApiFilePath = filePath;
         wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();

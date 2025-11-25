@@ -67,6 +67,12 @@ public class RequestVerificationBuilder
     /// </summary>
     /// <param name="content">The content that the body should contain.</param>
     /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// This method performs a case-insensitive string comparison on the request body.
+    /// It works best with text-based content. For JSON bodies, ensure the content
+    /// parameter matches the actual JSON structure as a string (e.g., including quotes
+    /// and formatting). Binary content is not supported by this method.
+    /// </remarks>
     public RequestVerificationBuilder WithBodyContaining(string content)
     {
         _bodyContains = content;
@@ -113,32 +119,38 @@ public class RequestVerificationBuilder
 
     private List<LogEntryModel> FilterRequests(IEnumerable<LogEntryModel> requests)
     {
-        var filtered = requests.AsEnumerable();
-
-        if (!string.IsNullOrEmpty(_method))
+        // Combine all filters into a single predicate to reduce iterations
+        return requests.Where(r =>
         {
-            filtered = filtered.Where(r =>
-                r.Request?.Method?.Equals(_method, StringComparison.OrdinalIgnoreCase) == true);
-        }
+            // Filter by method
+            if (!string.IsNullOrEmpty(_method) &&
+                r.Request?.Method?.Equals(_method, StringComparison.OrdinalIgnoreCase) != true)
+            {
+                return false;
+            }
 
-        if (!string.IsNullOrEmpty(_path))
-        {
-            filtered = filtered.Where(r =>
-                r.Request?.Path?.Equals(_path, StringComparison.OrdinalIgnoreCase) == true);
-        }
+            // Filter by path
+            if (!string.IsNullOrEmpty(_path) &&
+                r.Request?.Path?.Equals(_path, StringComparison.OrdinalIgnoreCase) != true)
+            {
+                return false;
+            }
 
-        if (_headers.Count > 0)
-        {
-            filtered = filtered.Where(r => MatchesHeaders(r));
-        }
+            // Filter by headers
+            if (_headers.Count > 0 && !MatchesHeaders(r))
+            {
+                return false;
+            }
 
-        if (!string.IsNullOrEmpty(_bodyContains))
-        {
-            filtered = filtered.Where(r =>
-                r.Request?.Body?.Contains(_bodyContains, StringComparison.OrdinalIgnoreCase) == true);
-        }
+            // Filter by body content
+            if (!string.IsNullOrEmpty(_bodyContains) &&
+                r.Request?.Body?.Contains(_bodyContains, StringComparison.OrdinalIgnoreCase) != true)
+            {
+                return false;
+            }
 
-        return filtered.ToList();
+            return true;
+        }).ToList();
     }
 
     private bool MatchesHeaders(LogEntryModel entry)
