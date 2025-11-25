@@ -17,6 +17,7 @@ namespace Aspire.Hosting.ApplicationModel;
 public class WireMockServerResource : ContainerResource, IResourceWithServiceDiscovery
 {
     private const int EnhancedFileSystemWatcherTimeoutMs = 2000;
+    private static readonly HttpClient SharedHttpClient = new();
 
     internal WireMockServerArguments Arguments { get; }
     internal Lazy<IWireMockAdminApi> AdminApi => _adminApi;
@@ -25,6 +26,7 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
     private readonly Lazy<IWireMockAdminApi> _adminApi;
     private ILogger? _logger;
     private EnhancedFileSystemWatcher? _enhancedFileSystemWatcher;
+    private CancellationToken _watcherCancellationToken;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WireMockServerResource"/> class.
@@ -107,8 +109,7 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
         else if (!string.IsNullOrEmpty(Arguments.OpenApiUrl))
         {
             _logger?.LogInformation("Loading OpenAPI spec from URL: '{Url}'", Arguments.OpenApiUrl);
-            using var httpClient = new HttpClient();
-            content = await httpClient.GetStringAsync(Arguments.OpenApiUrl, cancellationToken);
+            content = await SharedHttpClient.GetStringAsync(Arguments.OpenApiUrl, cancellationToken);
         }
         else if (!string.IsNullOrEmpty(Arguments.OpenApiDocument))
         {
@@ -140,6 +141,7 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
             return;
         }
 
+        _watcherCancellationToken = cancellationToken;
         cancellationToken.Register(() =>
         {
             if (_enhancedFileSystemWatcher != null)
@@ -183,12 +185,12 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
             try
             {
                 _logger?.LogInformation("MappingFile created, changed or deleted: '{0}'. Triggering ReloadStaticMappings.", args.FullPath);
-                await AdminApi.Value.ReloadStaticMappingsAsync();
+                await AdminApi.Value.ReloadStaticMappingsAsync(_watcherCancellationToken);
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Error reloading static mappings after file change: {FilePath}", args.FullPath);
             }
-        });
+        }, _watcherCancellationToken);
     }
 }

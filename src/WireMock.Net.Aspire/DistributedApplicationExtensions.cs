@@ -68,16 +68,37 @@ public static class DistributedApplicationExtensions
     {
         var applicationModel = app.Services.GetRequiredService<DistributedApplicationModel>();
 
-        var resource = applicationModel.Resources
-            .OfType<WireMockServerResource>()
-            .SingleOrDefault(r => string.Equals(r.Name, resourceName, StringComparison.OrdinalIgnoreCase));
-
-        if (resource is null)
+        try
         {
-            throw new ArgumentException(string.Format(CultureInfo.InvariantCulture, "WireMockServerResource with name '{0}' not found.", resourceName), nameof(resourceName));
-        }
+            var resource = applicationModel.Resources
+                .OfType<WireMockServerResource>()
+                .Single(r => string.Equals(r.Name, resourceName, StringComparison.OrdinalIgnoreCase));
 
-        return resource;
+            return resource;
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Single() throws InvalidOperationException for both "no elements" and "more than one element"
+            // Provide a more helpful error message
+            var matchingCount = applicationModel.Resources
+                .OfType<WireMockServerResource>()
+                .Count(r => string.Equals(r.Name, resourceName, StringComparison.OrdinalIgnoreCase));
+
+            if (matchingCount == 0)
+            {
+                throw new ArgumentException(
+                    string.Format(CultureInfo.InvariantCulture, "WireMockServerResource with name '{0}' not found.", resourceName),
+                    nameof(resourceName),
+                    ex);
+            }
+            else
+            {
+                throw new ArgumentException(
+                    string.Format(CultureInfo.InvariantCulture, "Multiple WireMockServerResource instances with name '{0}' found. Resource names must be unique.", resourceName),
+                    nameof(resourceName),
+                    ex);
+            }
+        }
     }
 
     private static EndpointReference? GetEndpointOrDefault(IResourceWithEndpoints wireMockServerResource, string endpointName)

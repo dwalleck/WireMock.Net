@@ -101,9 +101,17 @@ public class RequestVerificationBuilder
     /// <param name="expectedJson">The expected JSON content as a string.</param>
     /// <returns>The builder for chaining.</returns>
     /// <remarks>
+    /// <para>
     /// This method performs a semantic JSON comparison, meaning that property order,
     /// whitespace, and formatting differences are ignored. Only the actual JSON structure
     /// and values are compared.
+    /// </para>
+    /// <para>
+    /// <strong>Performance Note:</strong> The comparison recursively materializes JSON objects and arrays
+    /// into in-memory lists for comparison. For very large JSON payloads (e.g., megabytes of data),
+    /// this may consume significant memory. Consider using <see cref="WithBodyContaining"/> for
+    /// simple substring matching if full semantic comparison is not required for large payloads.
+    /// </para>
     /// </remarks>
     public RequestVerificationBuilder WithBodyMatchingJson(string expectedJson)
     {
@@ -320,7 +328,19 @@ public class RequestVerificationBuilder
                 return element1.GetString() == element2.GetString();
 
             case System.Text.Json.JsonValueKind.Number:
-                return element1.GetDecimal() == element2.GetDecimal();
+                // Try decimal comparison first for precision
+                // Fall back to double comparison for numbers outside decimal range
+                try
+                {
+                    return element1.GetDecimal() == element2.GetDecimal();
+                }
+                catch (FormatException)
+                {
+                    // Number is outside decimal range or has precision issues
+                    // Use double comparison with epsilon tolerance for floating-point comparisons
+                    const double epsilon = 1e-10;
+                    return Math.Abs(element1.GetDouble() - element2.GetDouble()) < epsilon;
+                }
 
             case System.Text.Json.JsonValueKind.True:
             case System.Text.Json.JsonValueKind.False:
