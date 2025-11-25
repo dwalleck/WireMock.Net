@@ -36,12 +36,22 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
     }
 
     /// <summary>
-    /// Gets an endpoint reference.
+    /// Gets the HTTP endpoint reference.
     /// </summary>
-    /// <returns>An <see cref="EndpointReference"/> object representing the endpoint reference.</returns>
+    /// <returns>An <see cref="EndpointReference"/> object representing the HTTP endpoint reference.</returns>
     public EndpointReference GetEndpoint()
     {
         return new EndpointReference(this, "http");
+    }
+
+    /// <summary>
+    /// Gets the HTTPS endpoint reference.
+    /// </summary>
+    /// <returns>An <see cref="EndpointReference"/> object representing the HTTPS endpoint reference.</returns>
+    /// <remarks>This endpoint is only available if HTTPS was configured using WithHttpsEndpoint().</remarks>
+    public EndpointReference GetHttpsEndpoint()
+    {
+        return new EndpointReference(this, "https");
     }
 
     internal void SetLogger(ILogger logger)
@@ -68,6 +78,38 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
         await Arguments.ApiMappingBuilder.Invoke(mappingBuilder, cancellationToken);
 
         ApiMappingState = WireMockMappingState.Submitted;
+    }
+
+    internal async Task LoadOpenApiDocumentAsync(CancellationToken cancellationToken)
+    {
+        if (!Arguments.HasOpenApiConfiguration)
+        {
+            return;
+        }
+
+        string? content = null;
+
+        if (!string.IsNullOrEmpty(Arguments.OpenApiFilePath))
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from file: '{Path}'", Arguments.OpenApiFilePath);
+            content = await File.ReadAllTextAsync(Arguments.OpenApiFilePath, cancellationToken);
+        }
+        else if (!string.IsNullOrEmpty(Arguments.OpenApiDocument))
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from inline content");
+            content = Arguments.OpenApiDocument;
+        }
+        else if (Arguments.OpenApiDocumentFactory != null)
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from factory");
+            content = Arguments.OpenApiDocumentFactory();
+        }
+
+        if (!string.IsNullOrEmpty(content))
+        {
+            await AdminApi.Value.OpenApiSaveAsync(content, cancellationToken);
+            _logger?.LogInformation("OpenAPI spec loaded successfully");
+        }
     }
 
     internal void StartWatchingStaticMappings(CancellationToken cancellationToken)

@@ -7,6 +7,7 @@ using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestEase;
+using WireMock.Admin.Requests;
 using WireMock.Client;
 
 // ReSharper disable once CheckNamespace
@@ -93,4 +94,135 @@ public static class DistributedApplicationExtensions
             throw new InvalidOperationException("The application must be started before resolving endpoints or connection strings");
         }
     }
+
+    #region Assertions
+
+    /// <summary>
+    /// Creates an assertion context for verifying requests made to the WireMock server.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <returns>A <see cref="WireMockAssertionContext"/> for building assertions.</returns>
+    public static WireMockAssertionContext CreateAssertions(this DistributedApplication app, string resourceName)
+    {
+        ThrowIfNotStarted(app);
+
+        var (resource, _) = GetResourceAndEndpointUri(app, resourceName);
+        return new WireMockAssertionContext(resource.AdminApi.Value, resourceName);
+    }
+
+    /// <summary>
+    /// Starts a fluent assertion builder to verify that a request was received.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <returns>A <see cref="RequestVerificationBuilder"/> for building the assertion.</returns>
+    public static RequestVerificationBuilder ShouldHaveReceived(this DistributedApplication app, string resourceName)
+    {
+        var context = app.CreateAssertions(resourceName);
+        return new RequestVerificationBuilder(context);
+    }
+
+    /// <summary>
+    /// Verifies that a GET request was received at the specified path.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="path">The expected request path.</param>
+    /// <returns>A <see cref="RequestVerificationBuilder"/> for further configuration.</returns>
+    public static RequestVerificationBuilder ShouldHaveReceivedGet(this DistributedApplication app, string resourceName, string path)
+    {
+        return app.ShouldHaveReceived(resourceName)
+            .WithMethod("GET")
+            .WithPath(path);
+    }
+
+    /// <summary>
+    /// Verifies that a POST request was received at the specified path.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="path">The expected request path.</param>
+    /// <returns>A <see cref="RequestVerificationBuilder"/> for further configuration.</returns>
+    public static RequestVerificationBuilder ShouldHaveReceivedPost(this DistributedApplication app, string resourceName, string path)
+    {
+        return app.ShouldHaveReceived(resourceName)
+            .WithMethod("POST")
+            .WithPath(path);
+    }
+
+    /// <summary>
+    /// Verifies that a PUT request was received at the specified path.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="path">The expected request path.</param>
+    /// <returns>A <see cref="RequestVerificationBuilder"/> for further configuration.</returns>
+    public static RequestVerificationBuilder ShouldHaveReceivedPut(this DistributedApplication app, string resourceName, string path)
+    {
+        return app.ShouldHaveReceived(resourceName)
+            .WithMethod("PUT")
+            .WithPath(path);
+    }
+
+    /// <summary>
+    /// Verifies that a DELETE request was received at the specified path.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="path">The expected request path.</param>
+    /// <returns>A <see cref="RequestVerificationBuilder"/> for further configuration.</returns>
+    public static RequestVerificationBuilder ShouldHaveReceivedDelete(this DistributedApplication app, string resourceName, string path)
+    {
+        return app.ShouldHaveReceived(resourceName)
+            .WithMethod("DELETE")
+            .WithPath(path);
+    }
+
+    /// <summary>
+    /// Verifies that no requests were received by the WireMock server.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    /// <exception cref="WireMockAssertionException">Thrown when requests were found.</exception>
+    public static async Task ShouldHaveReceivedNoRequestsAsync(this DistributedApplication app, string resourceName, CancellationToken cancellationToken = default)
+    {
+        await app.ShouldHaveReceived(resourceName)
+            .Times(0)
+            .ExecuteAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets all requests received by the WireMock server.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    /// <returns>A collection of request log entries.</returns>
+    public static async Task<IReadOnlyList<LogEntryModel>> GetAllRequestsAsync(
+        this DistributedApplication app,
+        string resourceName,
+        CancellationToken cancellationToken = default)
+    {
+        var context = app.CreateAssertions(resourceName);
+        var requests = await context.AdminApi.GetRequestsAsync(cancellationToken);
+        return requests.ToList().AsReadOnly();
+    }
+
+    /// <summary>
+    /// Resets all recorded requests on the WireMock server.
+    /// </summary>
+    /// <param name="app">The <see cref="DistributedApplication"/>.</param>
+    /// <param name="resourceName">The name of the WireMock resource.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    public static async Task ResetRequestsAsync(this DistributedApplication app, string resourceName, CancellationToken cancellationToken = default)
+    {
+        var context = app.CreateAssertions(resourceName);
+        await context.AdminApi.DeleteRequestsAsync(cancellationToken);
+    }
+
+    #endregion
 }
