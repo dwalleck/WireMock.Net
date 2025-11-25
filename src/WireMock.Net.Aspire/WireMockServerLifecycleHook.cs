@@ -39,6 +39,12 @@ internal class WireMockServerLifecycleHook(ILoggerFactory loggerFactory) : IDist
                 }
                 catch (Exception ex)
                 {
+                    if (wireMockServerResource.Arguments.ThrowOnOpenApiLoadFailure)
+                    {
+                        logger.LogCritical(ex, "Failed to load OpenAPI document for WireMock resource '{ResourceName}'. Startup will fail due to ThrowOnOpenApiLoadFailure setting.", wireMockServerResource.Name);
+                        throw;
+                    }
+
                     logger.LogError(ex, "Failed to load OpenAPI document for WireMock resource '{ResourceName}'. The WireMock server will start without OpenAPI mappings.", wireMockServerResource.Name);
                 }
 

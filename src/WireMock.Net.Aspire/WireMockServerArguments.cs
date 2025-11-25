@@ -224,6 +224,12 @@ public class WireMockServerArguments
         !string.IsNullOrEmpty(OpenApiDocument) ||
         OpenApiDocumentFactory != null;
 
+    /// <summary>
+    /// If true, OpenAPI load failures will cause the application startup to fail.
+    /// If false (default), failures are logged as errors but startup continues.
+    /// </summary>
+    public bool ThrowOnOpenApiLoadFailure { get; set; }
+
     #endregion
 
     /// <summary>

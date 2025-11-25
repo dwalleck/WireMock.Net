@@ -407,20 +407,23 @@ public static class WireMockServerBuilderExtensions
         Guard.NotNull(wiremock);
         Guard.NotNullOrWhiteSpace(filePath);
 
-        // Validate file path to prevent path traversal attacks
+        // Validate and normalize file path to prevent path traversal attacks
         try
         {
-            // Validate that the path is well-formed
-            _ = Path.GetFullPath(filePath);
+            // Normalize the path - this resolves ".." and "." segments
+            var normalizedPath = Path.GetFullPath(filePath);
 
-            // Check for common path traversal patterns
-            if (filePath.Contains("..", StringComparison.Ordinal) && !Path.IsPathRooted(filePath))
+            // Security check: Ensure the normalized path doesn't still contain traversal patterns
+            // This catches cases like "/tmp/../../etc/passwd" which would normalize but escape
+            if (normalizedPath.Contains("..", StringComparison.Ordinal))
             {
                 throw new ArgumentException(
-                    "File path contains potentially unsafe path traversal patterns (..). " +
-                    "Use absolute paths or ensure relative paths don't traverse outside the working directory.",
+                    $"File path contains unsafe path traversal patterns that persist after normalization: {normalizedPath}",
                     nameof(filePath));
             }
+
+            // Use the normalized path for better security and consistency
+            filePath = normalizedPath;
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
@@ -467,6 +470,25 @@ public static class WireMockServerBuilderExtensions
         wiremock.Resource.Arguments.OpenApiDocumentFactory = contentFactory;
         wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
 
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Configure whether OpenAPI load failures should cause application startup to fail.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="throwOnFailure">If true, OpenAPI load failures will throw an exception and prevent startup.
+    /// If false (default), failures are logged as errors but startup continues.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// This setting is useful for environments where OpenAPI mappings are critical to application functionality.
+    /// In development, you might want to continue startup even if specs fail to load, while in production
+    /// you might want to fail fast if configuration is invalid.
+    /// </remarks>
+    public static IResourceBuilder<WireMockServerResource> WithThrowOnOpenApiLoadFailure(this IResourceBuilder<WireMockServerResource> wiremock, bool throwOnFailure = true)
+    {
+        Guard.NotNull(wiremock);
+        wiremock.Resource.Arguments.ThrowOnOpenApiLoadFailure = throwOnFailure;
         return wiremock;
     }
 

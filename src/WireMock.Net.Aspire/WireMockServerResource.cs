@@ -161,16 +161,21 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
             adminApi;
     }
 
-    private async void FileCreatedChangedOrDeleted(object sender, FileSystemEventArgs args)
+    private void FileCreatedChangedOrDeleted(object sender, FileSystemEventArgs args)
     {
-        _logger?.LogInformation("MappingFile created, changed or deleted: '{0}'. Triggering ReloadStaticMappings.", args.FullPath);
-        try
+        // Fire and forget pattern with proper exception handling
+        // Using Task.Run to avoid async void and ensure exceptions are observed
+        _ = Task.Run(async () =>
         {
-            await AdminApi.Value.ReloadStaticMappingsAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Error calling /__admin/mappings/reloadStaticMappings");
-        }
+            try
+            {
+                _logger?.LogInformation("MappingFile created, changed or deleted: '{0}'. Triggering ReloadStaticMappings.", args.FullPath);
+                await AdminApi.Value.ReloadStaticMappingsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error reloading static mappings after file change: {FilePath}", args.FullPath);
+            }
+        });
     }
 }
