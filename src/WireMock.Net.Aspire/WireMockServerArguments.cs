@@ -206,6 +206,12 @@ public class WireMockServerArguments
     public string? OpenApiFilePath { get; set; }
 
     /// <summary>
+    /// URL to an OpenAPI specification to load as mappings.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// </summary>
+    public string? OpenApiUrl { get; set; }
+
+    /// <summary>
     /// OpenAPI specification content to load as mappings.
     /// </summary>
     public string? OpenApiDocument { get; set; }
@@ -227,6 +233,7 @@ public class WireMockServerArguments
     /// </summary>
     public bool HasOpenApiConfiguration =>
         !string.IsNullOrEmpty(OpenApiFilePath) ||
+        !string.IsNullOrEmpty(OpenApiUrl) ||
         !string.IsNullOrEmpty(OpenApiDocument) ||
         OpenApiDocumentFactory != null ||
         OpenApiDocumentFactoryAsync != null;

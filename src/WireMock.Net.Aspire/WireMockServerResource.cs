@@ -104,6 +104,12 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
             _logger?.LogInformation("Loading OpenAPI spec from file: '{Path}'", Arguments.OpenApiFilePath);
             content = await File.ReadAllTextAsync(Arguments.OpenApiFilePath, cancellationToken);
         }
+        else if (!string.IsNullOrEmpty(Arguments.OpenApiUrl))
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from URL: '{Url}'", Arguments.OpenApiUrl);
+            using var httpClient = new HttpClient();
+            content = await httpClient.GetStringAsync(Arguments.OpenApiUrl, cancellationToken);
+        }
         else if (!string.IsNullOrEmpty(Arguments.OpenApiDocument))
         {
             _logger?.LogInformation("Loading OpenAPI spec from inline content");

@@ -15,7 +15,9 @@ public class RequestVerificationBuilder
     private string? _method;
     private string? _path;
     private readonly Dictionary<string, string> _headers = new();
+    private readonly Dictionary<string, string> _queryParams = new();
     private string? _bodyContains;
+    private string? _bodyJson;
     private int? _expectedCount;
     private bool _atLeastOnce = true;
 
@@ -65,6 +67,18 @@ public class RequestVerificationBuilder
     }
 
     /// <summary>
+    /// Filter requests by query parameter.
+    /// </summary>
+    /// <param name="name">The query parameter name.</param>
+    /// <param name="value">The expected query parameter value.</param>
+    /// <returns>The builder for chaining.</returns>
+    public RequestVerificationBuilder WithQueryParam(string name, string value)
+    {
+        _queryParams[name] = value;
+        return this;
+    }
+
+    /// <summary>
     /// Filter requests by body content.
     /// </summary>
     /// <param name="content">The content that the body should contain.</param>
@@ -78,6 +92,22 @@ public class RequestVerificationBuilder
     public RequestVerificationBuilder WithBodyContaining(string content)
     {
         _bodyContains = content;
+        return this;
+    }
+
+    /// <summary>
+    /// Filter requests by JSON body content with semantic equivalence.
+    /// </summary>
+    /// <param name="expectedJson">The expected JSON content as a string.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// This method performs a semantic JSON comparison, meaning that property order,
+    /// whitespace, and formatting differences are ignored. Only the actual JSON structure
+    /// and values are compared.
+    /// </remarks>
+    public RequestVerificationBuilder WithBodyMatchingJson(string expectedJson)
+    {
+        _bodyJson = expectedJson;
         return this;
     }
 
@@ -147,9 +177,21 @@ public class RequestVerificationBuilder
                 return false;
             }
 
+            // Filter by query parameters
+            if (_queryParams.Count > 0 && !MatchesQueryParams(r))
+            {
+                return false;
+            }
+
             // Filter by body content
             if (!string.IsNullOrEmpty(_bodyContains) &&
                 r.Request?.Body?.Contains(_bodyContains, StringComparison.OrdinalIgnoreCase) != true)
+            {
+                return false;
+            }
+
+            // Filter by JSON body
+            if (!string.IsNullOrEmpty(_bodyJson) && !MatchesJsonBody(r))
             {
                 return false;
             }
@@ -180,6 +222,116 @@ public class RequestVerificationBuilder
         }
 
         return true;
+    }
+
+    private bool MatchesQueryParams(LogEntryModel entry)
+    {
+        if (entry.Request?.Query == null)
+        {
+            return false;
+        }
+
+        foreach (var queryParam in _queryParams)
+        {
+            if (!entry.Request.Query.TryGetValue(queryParam.Key, out var values))
+            {
+                return false;
+            }
+
+            // Check if any value in the query parameter list matches
+            if (values == null || !values.Any(v => v.Equals(queryParam.Value, StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool MatchesJsonBody(LogEntryModel entry)
+    {
+        if (string.IsNullOrEmpty(entry.Request?.Body))
+        {
+            return false;
+        }
+
+        try
+        {
+            // Parse both JSON strings and compare semantically
+            using var expectedDoc = System.Text.Json.JsonDocument.Parse(_bodyJson!);
+            using var actualDoc = System.Text.Json.JsonDocument.Parse(entry.Request.Body);
+
+            // Compare the JSON elements semantically
+            return JsonElementsEqual(expectedDoc.RootElement, actualDoc.RootElement);
+        }
+        catch
+        {
+            // If parsing fails, fall back to string comparison
+            return false;
+        }
+    }
+
+    private static bool JsonElementsEqual(System.Text.Json.JsonElement element1, System.Text.Json.JsonElement element2)
+    {
+        if (element1.ValueKind != element2.ValueKind)
+        {
+            return false;
+        }
+
+        switch (element1.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.Object:
+                var props1 = element1.EnumerateObject().OrderBy(p => p.Name).ToList();
+                var props2 = element2.EnumerateObject().OrderBy(p => p.Name).ToList();
+
+                if (props1.Count != props2.Count)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < props1.Count; i++)
+                {
+                    if (props1[i].Name != props2[i].Name || !JsonElementsEqual(props1[i].Value, props2[i].Value))
+                    {
+                        return false;
+                    }
+                }
+                return true;
+
+            case System.Text.Json.JsonValueKind.Array:
+                var array1 = element1.EnumerateArray().ToList();
+                var array2 = element2.EnumerateArray().ToList();
+
+                if (array1.Count != array2.Count)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < array1.Count; i++)
+                {
+                    if (!JsonElementsEqual(array1[i], array2[i]))
+                    {
+                        return false;
+                    }
+                }
+                return true;
+
+            case System.Text.Json.JsonValueKind.String:
+                return element1.GetString() == element2.GetString();
+
+            case System.Text.Json.JsonValueKind.Number:
+                return element1.GetDecimal() == element2.GetDecimal();
+
+            case System.Text.Json.JsonValueKind.True:
+            case System.Text.Json.JsonValueKind.False:
+                return element1.GetBoolean() == element2.GetBoolean();
+
+            case System.Text.Json.JsonValueKind.Null:
+                return true;
+
+            default:
+                return false;
+        }
     }
 
     private void ValidateCount(int actualCount)
@@ -224,9 +376,19 @@ public class RequestVerificationBuilder
             parts.Add($"headers=[{string.Join(",", _headers.Keys)}]");
         }
 
+        if (_queryParams.Count > 0)
+        {
+            parts.Add($"queryParams=[{string.Join(",", _queryParams.Keys)}]");
+        }
+
         if (!string.IsNullOrEmpty(_bodyContains))
         {
             parts.Add($"bodyContains=\"{_bodyContains}\"");
+        }
+
+        if (!string.IsNullOrEmpty(_bodyJson))
+        {
+            parts.Add("bodyMatchesJson");
         }
 
         return parts.Count > 0 ? string.Join(", ", parts) : "any request";

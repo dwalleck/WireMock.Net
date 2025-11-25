@@ -347,9 +347,40 @@ public static class WireMockServerBuilderExtensions
     /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
     /// <param name="enabled">Whether to enable the admin interface. Default is true.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    [Obsolete("Use EnableAdminInterface() or DisableAdminInterface() for clearer intent.")]
     public static IResourceBuilder<WireMockServerResource> WithAdminInterface(this IResourceBuilder<WireMockServerResource> wiremock, bool enabled = true)
     {
         Guard.NotNull(wiremock).Resource.Arguments.StartAdminInterface = enabled;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Enable the WireMock admin interface.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// The admin interface allows you to configure mappings, view requests, and manage the WireMock server
+    /// at runtime. It is accessible at the /__admin path by default.
+    /// </remarks>
+    public static IResourceBuilder<WireMockServerResource> EnableAdminInterface(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.StartAdminInterface = true;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Disable the WireMock admin interface.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// Disabling the admin interface can be useful in production scenarios where you want to prevent
+    /// runtime configuration changes and only use statically defined mappings.
+    /// </remarks>
+    public static IResourceBuilder<WireMockServerResource> DisableAdminInterface(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.StartAdminInterface = false;
         return wiremock;
     }
 
@@ -431,6 +462,32 @@ public static class WireMockServerBuilderExtensions
         }
 
         wiremock.Resource.Arguments.OpenApiFilePath = filePath;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Load mappings from an OpenAPI specification URL.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// The specification is downloaded and sent to the WireMock server's OpenAPI endpoint at startup.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="url">The URL to the OpenAPI specification.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiUrl(this IResourceBuilder<WireMockServerResource> wiremock, string url)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNullOrWhiteSpace(url);
+
+        // Validate URL format
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException($"Invalid OpenAPI URL: {url}. Must be a valid HTTP or HTTPS URL.", nameof(url));
+        }
+
+        wiremock.Resource.Arguments.OpenApiUrl = url;
         wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
 
         return wiremock;
