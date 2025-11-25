@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using Aspire.Hosting.ApplicationModel;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestEase;
@@ -133,7 +134,7 @@ public static class DistributedApplicationExtensions
     public static RequestVerificationBuilder ShouldHaveReceivedGet(this DistributedApplication app, string resourceName, string path)
     {
         return app.ShouldHaveReceived(resourceName)
-            .WithMethod("GET")
+            .WithMethod(HttpMethods.Get)
             .WithPath(path);
     }
 
@@ -147,7 +148,7 @@ public static class DistributedApplicationExtensions
     public static RequestVerificationBuilder ShouldHaveReceivedPost(this DistributedApplication app, string resourceName, string path)
     {
         return app.ShouldHaveReceived(resourceName)
-            .WithMethod("POST")
+            .WithMethod(HttpMethods.Post)
             .WithPath(path);
     }
 
@@ -161,7 +162,7 @@ public static class DistributedApplicationExtensions
     public static RequestVerificationBuilder ShouldHaveReceivedPut(this DistributedApplication app, string resourceName, string path)
     {
         return app.ShouldHaveReceived(resourceName)
-            .WithMethod("PUT")
+            .WithMethod(HttpMethods.Put)
             .WithPath(path);
     }
 
@@ -175,7 +176,7 @@ public static class DistributedApplicationExtensions
     public static RequestVerificationBuilder ShouldHaveReceivedDelete(this DistributedApplication app, string resourceName, string path)
     {
         return app.ShouldHaveReceived(resourceName)
-            .WithMethod("DELETE")
+            .WithMethod(HttpMethods.Delete)
             .WithPath(path);
     }
 

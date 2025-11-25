@@ -31,7 +31,9 @@ public class RequestVerificationBuilder
     /// <summary>
     /// Filter requests by HTTP method.
     /// </summary>
-    /// <param name="method">The HTTP method (GET, POST, PUT, DELETE, etc.).</param>
+    /// <param name="method">The HTTP method (GET, POST, PUT, DELETE, etc.).
+    /// Use constants from <see cref="Microsoft.AspNetCore.Http.HttpMethods"/> (e.g., HttpMethods.Get)
+    /// to avoid magic strings.</param>
     /// <returns>The builder for chaining.</returns>
     public RequestVerificationBuilder WithMethod(string method)
     {
