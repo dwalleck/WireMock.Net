@@ -217,12 +217,19 @@ public class WireMockServerArguments
     public Func<string>? OpenApiDocumentFactory { get; set; }
 
     /// <summary>
+    /// Async factory function to get OpenAPI specification content.
+    /// Useful for loading from embedded resources, databases, or network sources asynchronously.
+    /// </summary>
+    public Func<Task<string>>? OpenApiDocumentFactoryAsync { get; set; }
+
+    /// <summary>
     /// Indicates whether OpenAPI configuration is present.
     /// </summary>
     public bool HasOpenApiConfiguration =>
         !string.IsNullOrEmpty(OpenApiFilePath) ||
         !string.IsNullOrEmpty(OpenApiDocument) ||
-        OpenApiDocumentFactory != null;
+        OpenApiDocumentFactory != null ||
+        OpenApiDocumentFactoryAsync != null;
 
     /// <summary>
     /// If true, OpenAPI load failures will cause the application startup to fail.

@@ -474,6 +474,25 @@ public static class WireMockServerBuilderExtensions
     }
 
     /// <summary>
+    /// Load mappings from an OpenAPI specification using an async factory function.
+    /// Useful for loading from embedded resources, databases, or network sources asynchronously.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="contentFactoryAsync">An async function that returns the OpenAPI specification content.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiDocument(this IResourceBuilder<WireMockServerResource> wiremock, Func<Task<string>> contentFactoryAsync)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNull(contentFactoryAsync);
+
+        wiremock.Resource.Arguments.OpenApiDocumentFactoryAsync = contentFactoryAsync;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
     /// Configure whether OpenAPI load failures should cause application startup to fail.
     /// </summary>
     /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>

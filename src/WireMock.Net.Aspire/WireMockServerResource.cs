@@ -19,9 +19,10 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
     private const int EnhancedFileSystemWatcherTimeoutMs = 2000;
 
     internal WireMockServerArguments Arguments { get; }
-    internal Lazy<IWireMockAdminApi> AdminApi => new(CreateWireMockAdminApi);
+    internal Lazy<IWireMockAdminApi> AdminApi => _adminApi;
     internal WireMockMappingState ApiMappingState { get; set; } = WireMockMappingState.NoMappings;
 
+    private readonly Lazy<IWireMockAdminApi> _adminApi;
     private ILogger? _logger;
     private EnhancedFileSystemWatcher? _enhancedFileSystemWatcher;
 
@@ -33,6 +34,7 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
     public WireMockServerResource(string name, WireMockServerArguments arguments) : base(name)
     {
         Arguments = Guard.NotNull(arguments);
+        _adminApi = new Lazy<IWireMockAdminApi>(CreateWireMockAdminApi);
     }
 
     /// <summary>
@@ -106,6 +108,11 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
         {
             _logger?.LogInformation("Loading OpenAPI spec from inline content");
             content = Arguments.OpenApiDocument;
+        }
+        else if (Arguments.OpenApiDocumentFactoryAsync != null)
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from async factory");
+            content = await Arguments.OpenApiDocumentFactoryAsync();
         }
         else if (Arguments.OpenApiDocumentFactory != null)
         {

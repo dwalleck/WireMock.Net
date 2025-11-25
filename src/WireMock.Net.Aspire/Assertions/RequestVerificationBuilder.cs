@@ -115,13 +115,16 @@ public class RequestVerificationBuilder
         var requests = await _context.AdminApi.GetRequestsAsync(cancellationToken);
         var matching = FilterRequests(requests);
 
-        ValidateCount(matching.Count);
+        // Count the matching requests without materializing to a list
+        // This is more memory-efficient for large request logs
+        ValidateCount(matching.Count());
         return _context;
     }
 
-    private List<LogEntryModel> FilterRequests(IEnumerable<LogEntryModel> requests)
+    private IEnumerable<LogEntryModel> FilterRequests(IEnumerable<LogEntryModel> requests)
     {
         // Combine all filters into a single predicate to reduce iterations
+        // Return IEnumerable instead of List to avoid unnecessary memory allocation
         return requests.Where(r =>
         {
             // Filter by method
@@ -152,7 +155,7 @@ public class RequestVerificationBuilder
             }
 
             return true;
-        }).ToList();
+        });
     }
 
     private bool MatchesHeaders(LogEntryModel entry)
