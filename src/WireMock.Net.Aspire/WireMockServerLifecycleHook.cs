@@ -25,12 +25,28 @@ internal class WireMockServerLifecycleHook(ILoggerFactory loggerFactory) : IDist
 
             foreach (var wireMockServerResource in wireMockServerResources)
             {
-                wireMockServerResource.SetLogger(loggerFactory.CreateLogger<WireMockServerResource>());
+                var logger = loggerFactory.CreateLogger<WireMockServerResource>();
+                wireMockServerResource.SetLogger(logger);
 
                 var endpoint = wireMockServerResource.GetEndpoint();
                 System.Diagnostics.Debug.Assert(endpoint.IsAllocated);
 
                 await wireMockServerResource.WaitForHealthAsync(_linkedCts.Token);
+
+                try
+                {
+                    await wireMockServerResource.LoadOpenApiDocumentAsync(_linkedCts.Token);
+                }
+                catch (Exception ex)
+                {
+                    if (wireMockServerResource.Arguments.ThrowOnOpenApiLoadFailure)
+                    {
+                        logger.LogCritical(ex, "Failed to load OpenAPI document for WireMock resource '{ResourceName}'. Startup will fail due to ThrowOnOpenApiLoadFailure setting.", wireMockServerResource.Name);
+                        throw;
+                    }
+
+                    logger.LogError(ex, "Failed to load OpenAPI document for WireMock resource '{ResourceName}'. The WireMock server will start without OpenAPI mappings.", wireMockServerResource.Name);
+                }
 
                 await wireMockServerResource.CallApiMappingBuilderActionAsync(_linkedCts.Token);
 
@@ -38,7 +54,7 @@ internal class WireMockServerLifecycleHook(ILoggerFactory loggerFactory) : IDist
             }
         }, _linkedCts.Token);
 
-        return Task.CompletedTask;
+        return _mappingTask;
     }
 
     public async ValueTask DisposeAsync()

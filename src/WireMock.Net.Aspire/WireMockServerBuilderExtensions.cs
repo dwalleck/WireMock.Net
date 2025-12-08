@@ -71,6 +71,15 @@ public static class WireMockServerBuilderExtensions
             .WithHealthCheck(healthCheckKey)
             .WithWireMockInspectorCommand();
 
+        // Add HTTPS endpoint if configured
+        if (arguments.UseHttps)
+        {
+            resourceBuilder = resourceBuilder.WithHttpsEndpoint(
+                port: arguments.HttpsPort,
+                targetPort: WireMockServerArguments.HttpsContainerPort,
+                name: "https");
+        }
+
         if (!string.IsNullOrEmpty(arguments.MappingsPath))
         {
             resourceBuilder = resourceBuilder.WithBindMount(arguments.MappingsPath, DefaultLinuxMappingsPath);
@@ -151,6 +160,14 @@ public static class WireMockServerBuilderExtensions
     /// <param name="username">The admin username.</param>
     /// <param name="password">The admin password.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// <para><strong>Security Note:</strong> Credentials are passed as command-line arguments to the WireMock container
+    /// and may be visible in container logs or process listings. For production scenarios, consider using
+    /// secure credential management solutions like Azure Key Vault, environment variables from secure stores,
+    /// or Aspire's secret management features.</para>
+    /// <para>The credentials are transmitted as HTTP Basic Authentication headers (Base64 encoded) when
+    /// making admin API calls. Ensure HTTPS is used in production environments to protect credentials in transit.</para>
+    /// </remarks>
     public static IResourceBuilder<WireMockServerResource> WithAdminUserNameAndPassword(this IResourceBuilder<WireMockServerResource> wiremock, string username, string password)
     {
         Guard.NotNull(wiremock);
@@ -217,6 +234,341 @@ public static class WireMockServerBuilderExtensions
 
         return builder;
     }
+
+    #region HTTPS Configuration
+
+    /// <summary>
+    /// Adds an HTTPS endpoint to the WireMock.Net server using the container's default self-signed certificate.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="port">The optional HTTPS port. If not specified, a random port is assigned.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithHttpsEndpoint(this IResourceBuilder<WireMockServerResource> wiremock, int? port = null)
+    {
+        Guard.NotNull(wiremock);
+        Guard.Condition(port, p => p is null or > 0 and <= ushort.MaxValue);
+
+        wiremock.Resource.Arguments.HttpsPort = port;
+        return wiremock;
+    }
+
+    #endregion
+
+    #region Request Logging Configuration
+
+    /// <summary>
+    /// Sets the maximum number of request log entries to retain.
+    /// When the limit is reached, older entries are automatically removed.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="count">The maximum number of log entries to retain.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithMaxRequestLogCount(this IResourceBuilder<WireMockServerResource> wiremock, int count)
+    {
+        Guard.NotNull(wiremock);
+        Guard.Condition(count, c => c > 0);
+
+        wiremock.Resource.Arguments.MaxRequestLogCount = count;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Sets the request log expiration duration in hours.
+    /// Entries older than this duration are automatically removed.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="hours">The expiration duration in hours.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithRequestLogExpiration(this IResourceBuilder<WireMockServerResource> wiremock, int hours)
+    {
+        Guard.NotNull(wiremock);
+        Guard.Condition(hours, h => h > 0);
+
+        wiremock.Resource.Arguments.RequestLogExpirationDuration = hours;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Save unmatched requests to a file for debugging purposes.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithSaveUnmatchedRequests(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.SaveUnmatchedRequests = true;
+        return wiremock;
+    }
+
+    #endregion
+
+    #region Request Processing Configuration
+
+    /// <summary>
+    /// Allow partial mapping matching. When enabled, requests can partially match mappings.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithAllowPartialMapping(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.AllowPartialMapping = true;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Allow request body for all HTTP methods (including GET, DELETE).
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithAllowBodyForAllHttpMethods(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.AllowBodyForAllHttpMethods = true;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Handle requests synchronously instead of asynchronously.
+    /// Useful for debugging scenarios.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithSynchronousRequestHandling(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.HandleRequestsSynchronously = true;
+        return wiremock;
+    }
+
+    #endregion
+
+    #region Server Configuration
+
+    /// <summary>
+    /// Configure whether the admin interface is enabled.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="enabled">Whether to enable the admin interface. Default is true.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    [Obsolete("Use EnableAdminInterface() or DisableAdminInterface() for clearer intent.")]
+    public static IResourceBuilder<WireMockServerResource> WithAdminInterface(this IResourceBuilder<WireMockServerResource> wiremock, bool enabled = true)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.StartAdminInterface = enabled;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Enable the WireMock admin interface.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// The admin interface allows you to configure mappings, view requests, and manage the WireMock server
+    /// at runtime. It is accessible at the /__admin path by default.
+    /// </remarks>
+    public static IResourceBuilder<WireMockServerResource> EnableAdminInterface(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.StartAdminInterface = true;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Disable the WireMock admin interface.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// Disabling the admin interface can be useful in production scenarios where you want to prevent
+    /// runtime configuration changes and only use statically defined mappings.
+    /// </remarks>
+    public static IResourceBuilder<WireMockServerResource> DisableAdminInterface(this IResourceBuilder<WireMockServerResource> wiremock)
+    {
+        Guard.NotNull(wiremock).Resource.Arguments.StartAdminInterface = false;
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Set a custom path for the admin interface.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="path">The custom admin path. Default is "/__admin".</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithAdminPath(this IResourceBuilder<WireMockServerResource> wiremock, string path)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNullOrWhiteSpace(path);
+
+        wiremock.Resource.Arguments.AdminPath = path;
+        return wiremock;
+    }
+
+    #endregion
+
+    #region Azure AD Authentication
+
+    /// <summary>
+    /// Set Azure AD authentication for the admin interface.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="tenant">The Azure AD tenant.</param>
+    /// <param name="audience">The Azure AD audience.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithAzureADAuthentication(this IResourceBuilder<WireMockServerResource> wiremock, string tenant, string audience)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNullOrWhiteSpace(tenant);
+        Guard.NotNullOrWhiteSpace(audience);
+
+        wiremock.Resource.Arguments.AdminAzureADTenant = tenant;
+        wiremock.Resource.Arguments.AdminAzureADAudience = audience;
+        return wiremock;
+    }
+
+    #endregion
+
+    #region OpenAPI Configuration
+
+    /// <summary>
+    /// Load mappings from an OpenAPI specification file.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// The file is read and sent to the WireMock server's OpenAPI endpoint at startup.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="filePath">The local path to the OpenAPI specification file.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiFile(this IResourceBuilder<WireMockServerResource> wiremock, string filePath)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNullOrWhiteSpace(filePath);
+
+        // Validate and normalize file path to prevent path traversal attacks
+        try
+        {
+            // Normalize the path - this resolves ".." and "." segments
+            var normalizedPath = Path.GetFullPath(filePath);
+
+            // Security check: Ensure the normalized path doesn't still contain traversal patterns
+            // This catches cases like "/tmp/../../etc/passwd" which would normalize but escape
+            if (normalizedPath.Contains("..", StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"File path contains unsafe path traversal patterns that persist after normalization: {normalizedPath}",
+                    nameof(filePath));
+            }
+
+            // Use the normalized path for better security and consistency
+            filePath = normalizedPath;
+        }
+        catch (Exception ex) when (ex is not ArgumentException)
+        {
+            throw new ArgumentException($"Invalid file path: {filePath}", nameof(filePath), ex);
+        }
+
+        wiremock.Resource.Arguments.OpenApiFilePath = filePath;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Load mappings from an OpenAPI specification URL.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// The specification is downloaded and sent to the WireMock server's OpenAPI endpoint at startup.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="url">The URL to the OpenAPI specification.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiUrl(this IResourceBuilder<WireMockServerResource> wiremock, string url)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNullOrWhiteSpace(url);
+
+        // Validate URL format
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException($"Invalid OpenAPI URL: {url}. Must be a valid HTTP or HTTPS URL.", nameof(url));
+        }
+
+        wiremock.Resource.Arguments.OpenApiUrl = url;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Load mappings from an OpenAPI specification string.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="openApiContent">The OpenAPI specification content.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiDocument(this IResourceBuilder<WireMockServerResource> wiremock, string openApiContent)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNullOrWhiteSpace(openApiContent);
+
+        wiremock.Resource.Arguments.OpenApiDocument = openApiContent;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Load mappings from an OpenAPI specification using a factory function.
+    /// Useful for loading from embedded resources or dynamic content.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="contentFactory">A function that returns the OpenAPI specification content.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiDocument(this IResourceBuilder<WireMockServerResource> wiremock, Func<string> contentFactory)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNull(contentFactory);
+
+        wiremock.Resource.Arguments.OpenApiDocumentFactory = contentFactory;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Load mappings from an OpenAPI specification using an async factory function.
+    /// Useful for loading from embedded resources, databases, or network sources asynchronously.
+    /// Supports OpenAPI 2.0 (Swagger), 3.0, 3.1, and RAML formats in JSON or YAML.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="contentFactoryAsync">An async function that returns the OpenAPI specification content.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    public static IResourceBuilder<WireMockServerResource> WithOpenApiDocument(this IResourceBuilder<WireMockServerResource> wiremock, Func<Task<string>> contentFactoryAsync)
+    {
+        Guard.NotNull(wiremock);
+        Guard.NotNull(contentFactoryAsync);
+
+        wiremock.Resource.Arguments.OpenApiDocumentFactoryAsync = contentFactoryAsync;
+        wiremock.ApplicationBuilder.Services.TryAddLifecycleHook<WireMockServerLifecycleHook>();
+
+        return wiremock;
+    }
+
+    /// <summary>
+    /// Configure whether OpenAPI load failures should cause application startup to fail.
+    /// </summary>
+    /// <param name="wiremock">The <see cref="IResourceBuilder{WireMockServerResource}"/>.</param>
+    /// <param name="throwOnFailure">If true, OpenAPI load failures will throw an exception and prevent startup.
+    /// If false (default), failures are logged as errors but startup continues.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{WireMockServerResource}"/>.</returns>
+    /// <remarks>
+    /// This setting is useful for environments where OpenAPI mappings are critical to application functionality.
+    /// In development, you might want to continue startup even if specs fail to load, while in production
+    /// you might want to fail fast if configuration is invalid.
+    /// </remarks>
+    public static IResourceBuilder<WireMockServerResource> WithThrowOnOpenApiLoadFailure(this IResourceBuilder<WireMockServerResource> wiremock, bool throwOnFailure = true)
+    {
+        Guard.NotNull(wiremock);
+        wiremock.Resource.Arguments.ThrowOnOpenApiLoadFailure = throwOnFailure;
+        return wiremock;
+    }
+
+    #endregion
 
     private static Task<ExecuteCommandResult> OnRunOpenInspectorCommandAsync(IResourceBuilder<WireMockServerResource> builder)
     {

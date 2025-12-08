@@ -17,13 +17,16 @@ namespace Aspire.Hosting.ApplicationModel;
 public class WireMockServerResource : ContainerResource, IResourceWithServiceDiscovery
 {
     private const int EnhancedFileSystemWatcherTimeoutMs = 2000;
+    private static readonly HttpClient SharedHttpClient = new();
 
     internal WireMockServerArguments Arguments { get; }
-    internal Lazy<IWireMockAdminApi> AdminApi => new(CreateWireMockAdminApi);
+    internal Lazy<IWireMockAdminApi> AdminApi => _adminApi;
     internal WireMockMappingState ApiMappingState { get; set; } = WireMockMappingState.NoMappings;
 
+    private readonly Lazy<IWireMockAdminApi> _adminApi;
     private ILogger? _logger;
     private EnhancedFileSystemWatcher? _enhancedFileSystemWatcher;
+    private CancellationToken _watcherCancellationToken;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WireMockServerResource"/> class.
@@ -33,15 +36,26 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
     public WireMockServerResource(string name, WireMockServerArguments arguments) : base(name)
     {
         Arguments = Guard.NotNull(arguments);
+        _adminApi = new Lazy<IWireMockAdminApi>(CreateWireMockAdminApi);
     }
 
     /// <summary>
-    /// Gets an endpoint reference.
+    /// Gets the HTTP endpoint reference.
     /// </summary>
-    /// <returns>An <see cref="EndpointReference"/> object representing the endpoint reference.</returns>
+    /// <returns>An <see cref="EndpointReference"/> object representing the HTTP endpoint reference.</returns>
     public EndpointReference GetEndpoint()
     {
         return new EndpointReference(this, "http");
+    }
+
+    /// <summary>
+    /// Gets the HTTPS endpoint reference.
+    /// </summary>
+    /// <returns>An <see cref="EndpointReference"/> object representing the HTTPS endpoint reference.</returns>
+    /// <remarks>This endpoint is only available if HTTPS was configured using WithHttpsEndpoint().</remarks>
+    public EndpointReference GetHttpsEndpoint()
+    {
+        return new EndpointReference(this, "https");
     }
 
     internal void SetLogger(ILogger logger)
@@ -70,6 +84,56 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
         ApiMappingState = WireMockMappingState.Submitted;
     }
 
+    internal async Task LoadOpenApiDocumentAsync(CancellationToken cancellationToken)
+    {
+        if (!Arguments.HasOpenApiConfiguration)
+        {
+            return;
+        }
+
+        string? content = null;
+
+        if (!string.IsNullOrEmpty(Arguments.OpenApiFilePath))
+        {
+            if (!File.Exists(Arguments.OpenApiFilePath))
+            {
+                throw new FileNotFoundException(
+                    $"OpenAPI specification file not found: {Arguments.OpenApiFilePath}. " +
+                    "Ensure the file path is correct and the file exists.",
+                    Arguments.OpenApiFilePath);
+            }
+
+            _logger?.LogInformation("Loading OpenAPI spec from file: '{Path}'", Arguments.OpenApiFilePath);
+            content = await File.ReadAllTextAsync(Arguments.OpenApiFilePath, cancellationToken);
+        }
+        else if (!string.IsNullOrEmpty(Arguments.OpenApiUrl))
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from URL: '{Url}'", Arguments.OpenApiUrl);
+            content = await SharedHttpClient.GetStringAsync(Arguments.OpenApiUrl, cancellationToken);
+        }
+        else if (!string.IsNullOrEmpty(Arguments.OpenApiDocument))
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from inline content");
+            content = Arguments.OpenApiDocument;
+        }
+        else if (Arguments.OpenApiDocumentFactoryAsync != null)
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from async factory");
+            content = await Arguments.OpenApiDocumentFactoryAsync();
+        }
+        else if (Arguments.OpenApiDocumentFactory != null)
+        {
+            _logger?.LogInformation("Loading OpenAPI spec from factory");
+            content = Arguments.OpenApiDocumentFactory();
+        }
+
+        if (!string.IsNullOrEmpty(content))
+        {
+            await AdminApi.Value.OpenApiSaveAsync(content, cancellationToken);
+            _logger?.LogInformation("OpenAPI spec loaded successfully");
+        }
+    }
+
     internal void StartWatchingStaticMappings(CancellationToken cancellationToken)
     {
         if (!Arguments.WatchStaticMappings || string.IsNullOrEmpty(Arguments.MappingsPath))
@@ -77,6 +141,7 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
             return;
         }
 
+        _watcherCancellationToken = cancellationToken;
         cancellationToken.Register(() =>
         {
             if (_enhancedFileSystemWatcher != null)
@@ -111,16 +176,21 @@ public class WireMockServerResource : ContainerResource, IResourceWithServiceDis
             adminApi;
     }
 
-    private async void FileCreatedChangedOrDeleted(object sender, FileSystemEventArgs args)
+    private void FileCreatedChangedOrDeleted(object sender, FileSystemEventArgs args)
     {
-        _logger?.LogInformation("MappingFile created, changed or deleted: '{0}'. Triggering ReloadStaticMappings.", args.FullPath);
-        try
+        // Fire and forget pattern with proper exception handling
+        // Using Task.Run to avoid async void and ensure exceptions are observed
+        _ = Task.Run(async () =>
         {
-            await AdminApi.Value.ReloadStaticMappingsAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Error calling /__admin/mappings/reloadStaticMappings");
-        }
+            try
+            {
+                _logger?.LogInformation("MappingFile created, changed or deleted: '{0}'. Triggering ReloadStaticMappings.", args.FullPath);
+                await AdminApi.Value.ReloadStaticMappingsAsync(_watcherCancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error reloading static mappings after file change: {FilePath}", args.FullPath);
+            }
+        }, _watcherCancellationToken);
     }
 }
